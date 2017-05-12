@@ -1,0 +1,121 @@
+---
+title: "Acitvity Recognition"
+author: "Anthony Cato"
+date: "May 10, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+```{r libraries}
+suppressMessages(library(caret))
+```
+
+## Summary
+The goal of this project is to use data from accelerometers on the belt, forearm, arm, and dumbell to predict the manner in which 6 individuals performed a barbell exercise. The structure of the data and the provided problem statement lends itself well to a Classification ML model and so, in choosing which model to use, I tested prediction algorithms of this variety.  
+
+```{r read_data, cache=TRUE}
+training.url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testing.url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training <- data.table::fread(training.url)
+testing <- data.table::fread(testing.url)
+```
+
+## Data Cleaning
+Before building the model, I decided to remove many of the columns that I deemed unnecessary for improving predictive accuracy (e.g. a person's name and any compiled average, standard deviation or variance data) 
+```{r remove_unused_columns}
+# Remove id and names
+training <- dplyr::select(training, -dplyr::contains("name"))
+training <- dplyr::select(training, -dplyr::contains("V1"))
+testing <- dplyr::select(testing, -dplyr::contains("name"))
+testing <- dplyr::select(testing, -dplyr::contains("V1"))
+
+# Remove timestamps
+training <- dplyr::select(training, -dplyr::contains("timestamp"))
+testing <- dplyr::select(testing, -dplyr::contains("timestamp"))
+# Remove window
+training <- dplyr::select(training, -dplyr::contains("window"))
+testing <- dplyr::select(testing, -dplyr::contains("window"))
+```
+
+Beyond the user_name, timestamp, and window data that was removed in the previous section, I instantiated a vector ``` cols.to.remove``` to which I appended any other columns subject for removal.
+```{r remove_measures_of_CT_columns}
+# Remove columns containing average, stddev, and variance data
+cols.to.remove <- c()
+# CT --> Central Tendency 
+ct.cols <- grep("^avg_|stddev_|var_", names(training))
+ct.cols <- names(training)[ct.cols]
+cols.to.remove <- c(cols.to.remove, ct.cols)
+
+```
+
+### Missing data threshold
+I created a somewhat arbitrary missing data threshold of 75%, where if more than 75% is missing from any column, I added that column's name to ```r cols.to.remove```, which I will use to filter out of the cleaned training and test data. 
+```{r remove_data_lacking_cols}
+missing.data.threshold <- .75
+num.observations <- nrow(training)
+for (i in seq(ncol(training))) {
+    total.na <- sum(is.na(training[, i]))
+    total.empty <- sum(training[, i] == "", na.rm = TRUE)
+    total.missing <- total.na + total.empty
+    if (total.missing / num.observations > missing.data.threshold & 
+        (!names(training)[i] %in% cols.to.remove)) {
+        cols.to.remove <- c(cols.to.remove, names(training)[i])
+    }
+}
+
+indices.to.keep <- !names(training) %in% cols.to.remove
+training.clean <- training[, indices.to.keep] 
+testing.clean <- testing[, indices.to.keep]
+```
+
+
+
+```{r build_model, cache=TRUE}
+set.seed(187)
+# Partition training set
+inTrain <- createDataPartition(training.clean$classe,
+                               p = .5,
+                               list = FALSE)
+
+training.subset <- as.data.frame(training.clean)[inTrain,]
+training.test <- as.data.frame(training.clean)[-inTrain,]
+
+train.ctrl <- trainControl(verboseIter = TRUE)
+
+mod.rf <- train(classe ~ ., 
+                data = training.subset,
+                trainControl = train.ctrl,
+                method = "rf")
+
+pred.rf <- predict(mod.rf, training.test)
+
+mod.rpart <- train(classe ~ .,
+                   data = training.subset,
+                   method = "rpart")
+
+pred.rpart <- predict(mod.rpart, training.test)
+```
+Behind the scenes, the above models using 25 resamplings of the data for cross-validation purposes. This helps ensure that the predictive accuracy of the models is reflective of various slices of the data and that the model's results were not just due to luck. 
+
+## Confusion Matrices
+```{r conf_matrices}
+rf.conf.matrix <- confusionMatrix(training.test$classe, pred.rf)
+rpart.conf.matrix <- confusionMatrix(training.test$classe, pred.rpart)
+
+rf.acc <- rf.conf.matrix$overall['Accuracy']
+rpart.acc <- rpart.conf.matrix$overall['Accuracy']
+```
+
+### Model Accuracy (in order)
+1. Random Forest (rf) - ```r rf.acc```
+2. Regularized Random Forest (RRF) - ```r RRF.acc```
+
+## Misclassification Error (Out of Sample Error)
+
+
+## Conclusion
+Overall, the best performing Classification model was the Random Forest with an overall accuracy of 99.5%. 
