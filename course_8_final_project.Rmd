@@ -2,7 +2,8 @@
 title: "Acitvity Recognition"
 author: "Anthony Cato"
 date: "May 10, 2017"
-output: html_document
+output: 
+    html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -12,6 +13,9 @@ knitr::opts_chunk$set(echo = TRUE)
 ## R Markdown
 ```{r libraries}
 suppressMessages(library(caret))
+suppressMessages(library(kernlab))
+suppressMessages(library(randomForest))
+suppressMessages(library(scales))
 ```
 
 ## Summary
@@ -20,28 +24,26 @@ The goal of this project is to use data from accelerometers on the belt, forearm
 ```{r read_data, cache=TRUE}
 training.url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
 testing.url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
-training <- data.table::fread(training.url)
-testing <- data.table::fread(testing.url)
+training <- read.csv(training.url)
+testing <- read.csv(testing.url)
 ```
 
 ## Data Cleaning
 Before building the model, I decided to remove many of the columns that I deemed unnecessary for improving predictive accuracy (e.g. a person's name and any compiled average, standard deviation or variance data) 
 ```{r remove_unused_columns}
-# Remove id and names
-training <- dplyr::select(training, -dplyr::contains("name"))
-training <- dplyr::select(training, -dplyr::contains("V1"))
-testing <- dplyr::select(testing, -dplyr::contains("name"))
-testing <- dplyr::select(testing, -dplyr::contains("V1"))
+unused.cols <- c("user_name", "V1", "timestamp", "window")
 
-# Remove timestamps
-training <- dplyr::select(training, -dplyr::contains("timestamp"))
-testing <- dplyr::select(testing, -dplyr::contains("timestamp"))
-# Remove window
-training <- dplyr::select(training, -dplyr::contains("window"))
-testing <- dplyr::select(testing, -dplyr::contains("window"))
+RemoveUnusedCols <- function(data) {
+    data[ , -which(names(data) %in% unused.cols)]
+    return(data)
+}
+
+# Remove id and names
+training <- RemoveUnusedCols(training)
+testing <- RemoveUnusedCols(testing)
 ```
 
-Beyond the user_name, timestamp, and window data that was removed in the previous section, I instantiated a vector ``` cols.to.remove``` to which I appended any other columns subject for removal.
+Beyond the user_name, timestamp, and window data that was removed in the previous section, I instantiated a vector ```cols.to.remove``` to which I appended any other columns subject for removal.
 ```{r remove_measures_of_CT_columns}
 # Remove columns containing average, stddev, and variance data
 cols.to.remove <- c()
@@ -53,7 +55,7 @@ cols.to.remove <- c(cols.to.remove, ct.cols)
 ```
 
 ### Missing data threshold
-I created a somewhat arbitrary missing data threshold of 75%, where if more than 75% is missing from any column, I added that column's name to ```r cols.to.remove```, which I will use to filter out of the cleaned training and test data. 
+I created a somewhat arbitrary missing data threshold of 75%, where if more than 75% is missing from any column, I added that column's name to ```cols.to.remove```, which I will use to filter out of the cleaned training and test data. 
 ```{r remove_data_lacking_cols}
 missing.data.threshold <- .75
 num.observations <- nrow(training)
@@ -72,50 +74,95 @@ training.clean <- training[, indices.to.keep]
 testing.clean <- testing[, indices.to.keep]
 ```
 
-
-
-```{r build_model, cache=TRUE}
+```{r partition_data}
 set.seed(187)
 # Partition training set
 inTrain <- createDataPartition(training.clean$classe,
-                               p = .5,
+                               p = .6,
                                list = FALSE)
 
-training.subset <- as.data.frame(training.clean)[inTrain,]
-training.test <- as.data.frame(training.clean)[-inTrain,]
+train <- as.data.frame(training.clean)[inTrain,]
+train.test <- as.data.frame(training.clean)[-inTrain,]
+```
 
-train.ctrl <- trainControl(verboseIter = TRUE)
-
-mod.rf <- train(classe ~ ., 
-                data = training.subset,
-                trainControl = train.ctrl,
+```{r random_forest, cache=TRUE}
+# Build Random Forest model
+mod.rf <- train(classe ~ .,
+                data = train,
                 method = "rf")
 
-pred.rf <- predict(mod.rf, training.test)
 
+
+pred.rf <- predict(mod.rf, train.test)
+```
+
+```{r svm_model, cache=TRUE}
+# Build SVM model
+mod.svm <- train(classe ~ .,
+                 data = train,
+                 method = "svmRadial")
+
+pred.svm <- predict(mod.svm, train.test)
+```
+
+```{r rpart_model, cache=TRUE}
+# Build Rpart model
 mod.rpart <- train(classe ~ .,
-                   data = training.subset,
+                   data = train,
                    method = "rpart")
 
-pred.rpart <- predict(mod.rpart, training.test)
+
+
+pred.rpart <- predict(mod.rpart, train.test)
 ```
 Behind the scenes, the above models using 25 resamplings of the data for cross-validation purposes. This helps ensure that the predictive accuracy of the models is reflective of various slices of the data and that the model's results were not just due to luck. 
 
+## Model Plots
+```{r plot_models}
+par(mfrow=c(1,3))
+
+plot(mod.rf)
+plot(mod.svm)
+plot(mod.rpart)
+```
+
 ## Confusion Matrices
 ```{r conf_matrices}
-rf.conf.matrix <- confusionMatrix(training.test$classe, pred.rf)
-rpart.conf.matrix <- confusionMatrix(training.test$classe, pred.rpart)
+rf.conf.matrix <- confusionMatrix(train.test$classe, pred.rf)
+rf.conf.matrix$table
+
+svm.conf.matrix <- confusionMatrix(train.test$classe, pred.svm)
+svm.conf.matrix$table
+
+rpart.conf.matrix <- confusionMatrix(train.test$classe, pred.rpart)
+rpart.conf.matrix$table
 
 rf.acc <- rf.conf.matrix$overall['Accuracy']
+svm.acc <- svm.conf.matrix$overall['Accuracy'] 
 rpart.acc <- rpart.conf.matrix$overall['Accuracy']
 ```
 
 ### Model Accuracy (in order)
-1. Random Forest (rf) - ```r rf.acc```
-2. Regularized Random Forest (RRF) - ```r RRF.acc```
+1. Random Forest (rf) - ```r percent(rf.acc)```
+2. SVM (svmRadial) - ```r percent(svm.acc)```
+2. Rpart (rpart) - ```r percent(rpart.acc)```
 
 ## Misclassification Error (Out of Sample Error)
+```{r misclass_error}
+# Random Forest
+misclass.error.rf <- 1 - rf.acc
 
+# Support Vector Machine
+misclass.error.svm <- 1 - svm.acc
+
+# Rpart (CART)
+misclass.error.rpart <- 1 - rpart.acc
+```
+
+### Misclassification Error (in order of best/low to worst/high)
+1. Random Forest (rf) - ```r percent(misclass.error.rf)```
+2. SVM (svmRadial) - ```r percent(misclass.error.svm)```
+2. Rpart (rpart) - ```r percent(misclass.error.rpart)```
 
 ## Conclusion
-Overall, the best performing Classification model was the Random Forest with an overall accuracy of 99.5%. 
+Overall, the best performing Classification model was the Random Forest with an overall accuracy of ```r percent(rf.acc)``` (more precisely, 99.98%). The Support Vector Machine placed second in predictive accuracy with ```r percent(svm.acc)```. In last, the Rpart model performed the poorest with an accuracy of ```r percent(rpart.acc)```. The Random Forest took a great deal of time to run compared to the other models, but yielded the best results. In production, would proabably lean towards using the SVM to save some time without sacrificing too much predictive accuracy.  
