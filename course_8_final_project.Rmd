@@ -3,7 +3,11 @@ title: "Acitvity Recognition"
 author: "Anthony Cato"
 date: "May 10, 2017"
 output: 
-    html_document: default
+    html_document: 
+        keep_md: yes
+    md_document:
+        variant: markdown_github
+    pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -165,4 +169,4 @@ misclass.error.rpart <- 1 - rpart.acc
 2. Rpart (rpart) - ```r percent(misclass.error.rpart)```
 
 ## Conclusion
-Overall, the best performing Classification model was the Random Forest with an overall accuracy of ```r percent(rf.acc)``` (more precisely, 99.98%). The Support Vector Machine placed second in predictive accuracy with ```r percent(svm.acc)```. In last, the Rpart model performed the poorest with an accuracy of ```r percent(rpart.acc)```. The Random Forest took a great deal of time to run compared to the other models, but yielded the best results. In production, would proabably lean towards using the SVM to save some time without sacrificing too much predictive accuracy.  
+Overall, the best performing Classification model was the Random Forest with an overall accuracy of ```r percent(rf.acc)``` (more precisely, ```99.98%```). The Support Vector Machine placed second in predictive accuracy with ```r percent(svm.acc)```. In last, the Rpart model performed the poorest with an accuracy of ```r percent(rpart.acc)```. The Random Forest took a great deal of time to run compared to the other models, but yielded the best results. In production, would proabably lean towards using the SVM to save some time without sacrificing too much predictive accuracy.  
